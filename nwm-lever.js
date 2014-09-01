@@ -9,7 +9,9 @@ var nwm = new NWM();
 
 // load layouts
 var layouts = require('./lib/layouts');
-nwm.addLayout('doug', layouts.doug);
+nwm.addLayout('tile', layouts.tile);
+nwm.addLayout('monocle', layouts.monocle);
+nwm.addLayout('lever', layouts.lever);
 
 // convinience functions for writing the keyboard shortcuts
 function currentMonitor() {
@@ -193,6 +195,107 @@ keyboard_shortcuts.forEach(function(shortcut) {
     nwm.addKey({ key: XK[shortcut.key], modifier: modifier }, callback);
   }
 });
+
+// set up a server waiting for API commands
+var express = require('express');
+var app = express();
+var bodyParser = require('body-parser');
+
+
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(bodyParser.json());
+
+var port = process.env.PORT || 8080;
+
+var router = express.Router();
+
+router.use(function(req, res, next) {
+    console.log('routing...');
+    next();
+})
+
+router.get('/', function(req, res) {
+    res.json({ message: 'got /api root' });
+});
+
+// ROUTES for the NWM API
+router.route('/windows')
+    .get(function(req, res) {
+	var windows_res = [];
+	var monitor = currentMonitor();
+        var window = nwm.windows.get(monitor.focused_window);
+	var first_window = window.id;
+        do {
+	    windows_res.push(window.id);
+            var next = nwm.windows.next(window.id);
+            window = nwm.windows.get(next);
+        }
+        while(window.id != first_window);
+	res.json(windows_res);
+    }); 
+	
+router.route('/window/info/by_id/:window_id')
+    .get(function(req, res) {
+	var window_id = req.params.window_id;
+	if (!nwm.windows.exists(window_id)) {
+	    res.status(404);
+	    res.json({err: 'window does not exist'});
+	} else {
+	    var window = nwm.windows.get(window_id);
+
+	    var info = {id: window.id,
+			title: window.title,
+			x: window.x,
+			y: window.y,
+			width: window.width,
+			height: window.height}
+
+	    res.json(info);
+	}
+    }); 
+	
+router.route('/window/info/by_title/:title')
+    .get(function(req, res) {
+	var title = req.params.title;
+	var window = nwm.windows.get(window_id);
+
+	var info = {id: window.id,
+		    title: window.title,
+		    x: window.x,
+		    y: window.y,
+		    width: window.width,
+		    height: window.height}
+
+	res.json(info);
+    }); 
+	
+router.route('/layout/:layout_mode')
+    .put(function(req, res) {
+	var layout_mode = req.params.layout_mode;
+	console.log('in layout put mode='+layout_mode);
+	if (layout_mode in nwm.layouts) {
+	    var monitor = currentMonitor();
+	    var workspace = monitor.currentWorkspace();
+
+	    workspace.layout = layout_mode;
+
+	    // monocle hides windows in the current workspace, so unhide them
+	    monitor.go(monitor.workspaces.current);
+	    workspace.rearrange();
+	    res.json({})
+	} else {
+	    res.status(404);
+	    res.json({err: 'layout does not exist'});
+	}
+    });
+
+// all routes start with /api
+app.use('/api', router);
+
+
+
+app.listen(port);
+console.log('Listening: '+port);
 
 // START
 nwm.start(function() { });

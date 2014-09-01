@@ -19,6 +19,8 @@
     "mocha": "~1.2.1"
   },
   "dependencies": {
-    "bindings": "~1.0.0"
+      "bindings": "~1.0.0",
+      "express": "~4.0.0",
+      "body-parser": "~1.0.1"
   }
 }
