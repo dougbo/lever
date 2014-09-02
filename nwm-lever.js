@@ -37,11 +37,12 @@ function resizeWorkspace(increment) {
 }
 
 // KEYBOARD SHORTCUTS
-// Change the base modifier to your liking e.g. Xh.Mod4Mask if you just want to use the meta key without Ctrl
-var baseModifier = Xh.Mod4Mask; // Win key
+// Change the base modifier to your liking e.g. Xh.Mod1Mask if you just want to use the meta key without Ctrl
+// Using Mod1 which maps to alt as friendlier on Apple keyboards
+var baseModifier = Xh.Mod1Mask; // Alt key
 
 if ( process.env.DISPLAY && process.env.DISPLAY == ':1' ) {
-  baseModifier = Xh.Mod4Mask|Xh.ControlMask; // Win + Ctrl
+  baseModifier = Xh.Mod1Mask|Xh.ControlMask; // Alt + Ctrl
 }
 
 var keyboard_shortcuts = [
@@ -208,6 +209,27 @@ app.use(bodyParser.json());
 var port = process.env.PORT || 8080;
 
 var router = express.Router();
+var API_VERSION = 'v1'
+
+// all routes start with /api
+app.use('/api/'+API_VERSION, router);
+
+// api:
+
+// GET /windows -> [ windowid1, ... ]
+// GET /windows/info -> [ { id, title, x, y, ... }, ... ]
+
+// GET /window/:window_id/info
+// PUT /window/:window_id/focus
+// PUT /window/:window_id/close
+// PATCH /window/:window_id/title/:title
+
+
+// PUT /layout/:layout_name
+// PUT /layout/rotate/:f_b
+
+
+// PUT /layout/lever/mode/:n_up
 
 router.use(function(req, res, next) {
     console.log('routing...');
@@ -232,9 +254,29 @@ router.route('/windows')
         }
         while(window.id != first_window);
 	res.json(windows_res);
-    }); 
-	
-router.route('/window/info/by_id/:window_id')
+    });
+
+
+
+router.route('/windows/info')
+    .get(function(req, res) {
+	var windows_res = []
+	var windows = nwm.windows;
+	for (window_id in windows.items) {
+	    console.log('window id: '+window_id);
+	    var window = windows.get(window_id);
+	    var info = {id: window.id,
+			title: window.title,
+			x: window.x,
+			y: window.y,
+			width: window.width,
+			height: window.height};
+	    windows_res.push(info)
+	}
+	res.json(windows_res);
+    });
+
+router.route('/window/:window_id/info')
     .get(function(req, res) {
 	var window_id = req.params.window_id;
 	if (!nwm.windows.exists(window_id)) {
@@ -254,20 +296,57 @@ router.route('/window/info/by_id/:window_id')
 	}
     }); 
 	
-router.route('/window/info/by_title/:title')
-    .get(function(req, res) {
-	var title = req.params.title;
-	var window = nwm.windows.get(window_id);
+router.route('/window/:window_id/focus')
+    .put(function(req, res) {
+	var window_id = req.params.window_id;
 
-	var info = {id: window.id,
-		    title: window.title,
-		    x: window.x,
-		    y: window.y,
-		    width: window.width,
-		    height: window.height}
+	var monitor = currentMonitor();
+	var workspace = monitor.currentWorkspace();
 
-	res.json(info);
+	if (nwm.windows.exists(window_id)) {
+	    monitor.mainWindow = window_id;
+	    workspace.rearrange();
+	    res.json({})
+	    return;
+	}
+
+	res.status(404);
+	res.json({err: 'window dooes not exist'});
+    });
+
+
+router.route('/window/:window_id/close')
+    .put(function(req, res) {
+	var window_id = req.params.window_id;
+	if (!nwm.windows.exists(window_id)) {
+	    res.status(404);
+	    res.json({err: 'window does not exist'});
+	} else {
+	    nwm.wm.killWindow(window_id);
+	    res.json({});
+	}
+    });
+	
+router.route('/window/:window_id/title/:title')
+    .patch(function(req, res) {
+	var window_id = req.params.window_id;
+	var new_title = req.params.title
+	console.log('patch title -> '+new_title)
+	if (!nwm.windows.exists(window_id) || typeof(new_title) == 'undefined') {
+	    res.status(404);
+	    res.json({err: 'window does not exist'});
+	} else {
+	    var monitor = currentMonitor();
+	    var workspace = monitor.currentWorkspace();
+
+	    var window = nwm.windows.get(window_id);
+	    window.title = new_title;
+	    workspace.rearrange();
+
+	    res.json({});
+	}
     }); 
+	
 	
 router.route('/layout/:layout_mode')
     .put(function(req, res) {
@@ -289,8 +368,79 @@ router.route('/layout/:layout_mode')
 	}
     });
 
-// all routes start with /api
-app.use('/api', router);
+router.route('/layout/rotate/:f_b')
+    .put(function(req, res) {
+	var f_b = req.params.f_b;
+	if (f_b == 'f' || f_b == 'b') {
+	    var monitor = currentMonitor();
+	    var workspace = monitor.currentWorkspace();
+	    var windows = nwm.windows;
+
+	    var ids = Object.keys(windows.items);
+	    console.log('IDS: ');
+	    console.log(ids);
+	    var mainId = workspace.mainWindow.toString();
+	    var winAt = ids.indexOf(mainId);
+	    console.log('winAt: '+winAt+' '+mainId);
+	    if (winAt < 0) {
+		res.status(500);
+		res.json({err: 'Window '+mainId+' not found'});
+		return;
+	    }
+
+	    if (f_b == 'b') {
+		winAt = winAt -1;
+		if (winAt < 0) {
+		    // wrap back
+		    winAt = ids.length-1;
+		}
+	    } else {
+		winAt = winAt + 1
+		if (winAt >= ids.length) {
+		    // wrap forward
+		    winAt = 0;
+		}
+	    }
+	    var newMainId = ids[winAt];
+	    console.log('main window: '+mainId);
+	    console.log('new main: '+newMainId+' '+winAt);
+
+	    monitor.mainWindow = ids[winAt];
+	    var window = windows.get(mainId);
+	    window.hide();
+	    window = windows.get(newMainId);
+	    window.show();
+
+	    workspace.rearrange();
+	    res.json({})
+	} else {
+	    res.status(404);
+	    res.json({err: 'layout does not exist'});
+	}
+    });
+
+router.route('/layout/lever/mode/:n_up')
+    .put(function(req, res) {
+	var n_up = req.params.n_up;
+	console.log('in layout put mode='+layout_mode);
+	var monitor = currentMonitor();
+	var workspace = monitor.currentWorkspace();
+
+	if (workspace.layout != 'lever') {
+	    res.status(404);
+	    res.json({err: 'current layout is not "lever"'});
+	} else {
+
+	    // set lever to 1/2 up 
+	    if (n_up != '1' && n_up != '2') {
+		res.status(400); // bad request
+	    } else {
+		res.status(500); // UNIMPLEMENTED
+	    }
+
+	    res.json({})
+	}
+    });
 
 
 
