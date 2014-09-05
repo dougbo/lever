@@ -219,6 +219,11 @@ app.use('/api/'+API_VERSION, router);
 // GET /windows -> [ windowid1, ... ]
 // GET /windows/info -> [ { id, title, x, y, ... }, ... ]
 
+// [current window]
+// GET /window/id
+// GET /window/info
+// GET /window/close
+
 // GET /window/:window_id/info
 // PUT /window/:window_id/focus
 // PUT /window/:window_id/close
@@ -232,7 +237,6 @@ app.use('/api/'+API_VERSION, router);
 // PUT /layout/lever/mode/:n_up
 
 router.use(function(req, res, next) {
-    console.log('routing...');
     next();
 })
 
@@ -263,7 +267,6 @@ router.route('/windows/info')
 	var windows_res = []
 	var windows = nwm.windows;
 	for (window_id in windows.items) {
-	    console.log('window id: '+window_id);
 	    var window = windows.get(window_id);
 	    var info = {id: window.id,
 			title: window.title,
@@ -276,6 +279,33 @@ router.route('/windows/info')
 	res.json(windows_res);
     });
 
+router.route('/window/id')
+    .get(function(req, res) {
+	// window id of current focused window
+	var monitor = currentMonitor();
+	res.json(monitor.focused_window);
+    }); 
+
+
+function win_info(window_id) {
+    var window = nwm.windows.get(window_id);
+    
+    var info = {id: window.id,
+		title: window.title,
+		x: window.x,
+		y: window.y,
+		width: window.width,
+		height: window.height}
+
+    return info;
+}
+
+router.route('/window/info')
+    .get(function(req, res) {
+	var monitor = currentMonitor()
+	res.json(win_info(monitor.focused_window));
+    }); 
+
 router.route('/window/:window_id/info')
     .get(function(req, res) {
 	var window_id = req.params.window_id;
@@ -283,30 +313,33 @@ router.route('/window/:window_id/info')
 	    res.status(404);
 	    res.json({err: 'window does not exist'});
 	} else {
-	    var window = nwm.windows.get(window_id);
-
-	    var info = {id: window.id,
-			title: window.title,
-			x: window.x,
-			y: window.y,
-			width: window.width,
-			height: window.height}
-
-	    res.json(info);
+	    res.json(win_info(window_id));
 	}
-    }); 
-	
+    });
+
+function win_focus(window_id) {
+    var monitor = currentMonitor();
+    var workspace = monitor.currentWorkspace();
+
+    var window = nwm.windows.get(monitor.focused_window);
+    window.hide();
+    monitor.focused_window = window_id;
+    window = nwm.windows.get(monitor.focused_window);
+    window.show();
+
+    workspace.rearrange();
+    return {}
+}
+
+// TODO: focus with no window_id focuses on the window behind the current focused_window
+
 router.route('/window/:window_id/focus')
     .put(function(req, res) {
 	var window_id = req.params.window_id;
 
-	var monitor = currentMonitor();
-	var workspace = monitor.currentWorkspace();
-
 	if (nwm.windows.exists(window_id)) {
-	    monitor.mainWindow = window_id;
-	    workspace.rearrange();
-	    res.json({})
+
+	    res.json(win_focus(window_id));
 	    return;
 	}
 
@@ -314,6 +347,15 @@ router.route('/window/:window_id/focus')
 	res.json({err: 'window dooes not exist'});
     });
 
+function win_close(window_id) {
+    nwm.wm.killWindow(window_id);
+}
+
+router.route('/window/:window_id/close')
+    .put(function(req, res) {
+	var monitor = currentMonitor()
+	res.json(win_close(monitor.focused_window));
+    });
 
 router.route('/window/:window_id/close')
     .put(function(req, res) {
@@ -322,7 +364,6 @@ router.route('/window/:window_id/close')
 	    res.status(404);
 	    res.json({err: 'window does not exist'});
 	} else {
-	    nwm.wm.killWindow(window_id);
 	    res.json({});
 	}
     });
@@ -360,6 +401,11 @@ router.route('/layout/:layout_mode')
 
 	    // monocle hides windows in the current workspace, so unhide them
 	    monitor.go(monitor.workspaces.current);
+	    if (layout_mode == 'lever') {
+		// start our in 1-up mode
+		workspace.n_up = '1';
+	    }
+
 	    workspace.rearrange();
 	    res.json({})
 	} else {
@@ -422,7 +468,7 @@ router.route('/layout/rotate/:f_b')
 router.route('/layout/lever/mode/:n_up')
     .put(function(req, res) {
 	var n_up = req.params.n_up;
-	console.log('in layout put mode='+layout_mode);
+	console.log('in layout put mode='+n_up);
 	var monitor = currentMonitor();
 	var workspace = monitor.currentWorkspace();
 
@@ -435,7 +481,8 @@ router.route('/layout/lever/mode/:n_up')
 	    if (n_up != '1' && n_up != '2') {
 		res.status(400); // bad request
 	    } else {
-		res.status(500); // UNIMPLEMENTED
+		workspace.n_up = n_up;
+		workspace.rearrange();
 	    }
 
 	    res.json({})

@@ -1,0 +1,10 @@
+#!/bin/bash
+
+# www: launch a web browser screen
+
+if [ $# -eq 0 ]; then
+   echo "usage: www <url>"
+   exit 1
+fi
+
+exec chromium --kiosk "$*"

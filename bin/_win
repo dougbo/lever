@@ -1,0 +1,36 @@
+#!/bin/bash
+
+
+# _win: execute various commands against current / named window; returns json
+
+# xxx - recode this in node
+
+OP=GET
+
+if [ $# -eq 0 ]; then
+    WINID=`_win id`
+    CMD='info'
+else
+  if [ "x$1" == x-id ]; then
+    shift
+    WINID = $1; shift
+  fi
+
+  if [ $# == 0 ]; then
+      CMD='info';
+  elif [ "$1" == 'id' -o "$1" == 'info' ]; then
+      CMD=$1
+  elif [ "$1" == 'close' ]; then
+      OP='PUT'
+      CMD='close'
+  else
+      echo "usage: win [-id winid] [id | info | close]"
+      exit 1
+  fi
+fi
+
+if [ "x$WINID" == 'x' ]; then
+  curl -s -X $OP http://localhost:8080/api/v1/window/$CMD
+else
+  curl -s -X $OP http://localhost:8080/api/v1/window/$WINID/$CMD
+fi

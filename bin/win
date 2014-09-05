@@ -1,0 +1,113 @@
+#!/bin/bash
+
+# win: execute various lever/layout commands
+
+function usage {
+    echo "usage: " 1>&2
+    echo "       win focus <title>" 1>&2
+    echo "       win focus -id <id>" 1>&2
+    echo "       win rotate [f|b]" 1>&2
+    echo " " 1>&2
+    echo "       win info" 1>&2
+    echo "       win mode [lever|oneup|twoup]" 1>&2
+    echo "       win title <title>" 1>&2
+    exit 0
+}
+
+function find_title {
+    # find_title(substr): find us exactly one case insensitive substring matching title 
+
+    KW=`echo "$1" | tr '[A-Z]' '[a-z]'`
+    RET_ID=`win info | awk '-F	' 'tolower($2)'" ~ /$KW/"'{ print $1 }'`
+    NTITLE=`echo "$RET_ID" | wc | awk '{print $1 }'`
+    if [ -z "$RET_ID" -o $NTITLE -eq 0 ]; then
+	echo "title not found" 1>&2
+	return 1
+    elif [ $NTITLE  -gt 1 ]; then
+	echo "too many($NTITLE) titles found" 1>&2
+	return 1
+    fi
+
+    return 0
+}
+
+
+if [ $# -eq 0 ]; then
+
+    # pretty print the current window info
+    CMD="/window/info"
+    exec curl -s -X GET http://localhost:8080/api/v1/$CMD | json '-d	' -a id title 
+
+else
+
+    if [ "x$1" == 'x--help' ]; then
+	usage
+    fi
+
+    if [ "$1" == 'rotate' -o "$1" == 'oneup' -o "$1" == 'twoup' -o "$1" == 'focus' -o "$1" == 'mode' ]; then
+        # state change operations
+
+	if [ "$1" == 'rotate' ]; then
+	    shift
+	    if [ $# == 0 -o "$1" == "f" ]; then
+		CMD="layout/rotate/f"
+	    elif [ "$1" == 'b' ]; then
+		CMD="layout/rotate/b"
+	    else
+		usage
+	    fi
+	    
+	elif [ "$1" == 'mode' -a $# == 2 ]; then
+	    shift
+	    if [ $1 == 'oneup' ]; then
+		CMD="layout/lever/mode/1"
+	    elif [ "$1" == 'twoup' ]; then
+		CMD="layout/lever/mode/2"
+	    elif [ $1 == 'lever' ]; then
+		CMD="layout/lever"
+	    else
+		usage
+	    fi
+	elif [ "$1" == 'focus' -a $# -gt 1 ]; then
+	    shift
+	    if [ "x$1" == x-id -a $# == 2 ]; then
+
+		ID="$2"
+		CMD="window/$ID/focus"
+		
+	    elif [ $# == 1 ]; then
+		if find_title "$1"; then
+		    CMD="window/$RET_ID/focus"
+		else
+		    exit
+		fi
+	    else
+		usage
+	    fi
+	else
+	    usage
+	fi
+
+	exec curl -s -X PUT http://localhost:8080/api/v1/$CMD >/dev/null
+
+    elif [ "$1" == 'title' -a $# == 2 ]; then
+	# state update operations
+	shift
+
+	RET_ID=`_win id`
+	TITLE="$1"
+	
+	CMD="/window/$RET_ID/title/$TITLE"
+	exec curl -s -X PATCH http://localhost:8080/api/v1/$CMD >/dev/null
+	
+    elif [ "$1" == 'info' -a $# == 1 ]; then
+
+        # pretty formatted info commands -- tab-separated since id's may be arbitrary
+	CMD="/windows/info"
+	exec curl -s -X GET http://localhost:8080/api/v1/$CMD | json '-d	' -a id title 
+    else
+	usage
+    fi
+
+
+fi
