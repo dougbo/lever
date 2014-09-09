@@ -70,6 +70,7 @@ typedef struct {
   int y;
   int move_x;
   int move_y;
+  int drag_done;  // sentinel, last event
 
 } nwm_mousedrag;
 

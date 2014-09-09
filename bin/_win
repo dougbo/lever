@@ -13,7 +13,7 @@ if [ $# -eq 0 ]; then
 else
   if [ "x$1" == x-id ]; then
     shift
-    WINID = $1; shift
+    WINID="$1"; shift
   fi
 
   if [ $# == 0 ]; then

@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+
 #include <X11/cursorfont.h>
 #include <X11/keysym.h>
 #include <X11/Xatom.h>
@@ -208,7 +209,7 @@ void nwm_grab_keys() {
     List *item = NULL;
     List_for_each(item, nwm.keys) {
       Key* curr = (Key *)item->data;
-      fprintf( stderr, "grab key -- key: %li modifier %d \n", curr->keysym, curr->mod);
+      // fprintf( stderr, "grab key -- key: %li modifier %d \n", curr->keysym, curr->mod);
       // also grab the combinations of screen lock and num lock (as those should not matter)
       for(i = 0; i < 4; i++) {
         XGrabKey(nwm.dpy, XKeysymToKeycode(nwm.dpy, curr->keysym), curr->mod | modifiers[i], nwm.root, True, GrabModeAsync, GrabModeAsync);
@@ -222,7 +223,7 @@ void nwm_set_emit_function(void (*callback)(callback_map event, void *ev)) {
 }
 
 static void nwm_emit(callback_map event, void *ev) {
-  fprintf(stderr, "nwm_emit called with payload %d.\n", event);
+  // fprintf(stderr, "nwm_emit called with payload %d.\n", event);
   if(nwm.emit_func) {
     nwm.emit_func(event, ev);
   }
@@ -453,7 +454,8 @@ void nwm_remove_window(Window win, Bool destroyed) {
 
 
 static void nwm_scan_monitors() {
-  int i, nn;
+  unsigned i, nn;
+  int nmon;
   unsigned int j;
   XineramaScreenInfo *info = NULL;
   XineramaScreenInfo *unique = NULL;
@@ -476,7 +478,8 @@ static void nwm_scan_monitors() {
 
   // with Xinerama
   fprintf( stderr, "Xinerama active\n");
-  info = XineramaQueryScreens(nwm.dpy, &nn);
+  info = XineramaQueryScreens(nwm.dpy, &nmon);
+  nn = nmon;
 
   fprintf( stderr, "Monitors known %d, monitors found %d\n", nwm.total_monitors, nn);
   /* only consider unique geometries as separate screens */
@@ -551,23 +554,28 @@ static void event_buttonpress(XEvent *e) {
 }
 
 void GrabMouseRelease(Window id) {
-  // disabled for now
-  return;
-/*
   XEvent ev;
-  int x, y;
-  Local<Value> argv[1];
+  int org_x, org_y;
 
   if(XGrabPointer(nwm.dpy, nwm.root, False,
     ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync,
     GrabModeAsync, None, XCreateFontCursor(nwm.dpy, XC_fleur), CurrentTime) != GrabSuccess) {
     return;
   }
-  if(!nwm.getrootptr(&x, &y)) {
+  if(!getrootptr(nwm.dpy, nwm.root, &org_x, &org_y)) {
     return;
   }
+  nwm_mousedrag m;
+
+  m.id = id;
+  m.x = org_x;
+  m.y = org_y;
+  m.drag_done = False;
+  
   do{
     XMaskEvent(nwm.dpy, ButtonPressMask|ButtonReleaseMask|PointerMotionMask|ExposureMask|SubstructureRedirectMask, &ev);
+
+
     switch(ev.type) {
       case ConfigureRequest:
         // handle normally
@@ -580,14 +588,38 @@ void GrabMouseRelease(Window id) {
         break;
       case MotionNotify:
         {
-          argv[0] = NodeWM::makeMouseDrag(id, x, y, ev.xmotion.x, ev.xmotion.y); // , ev.state);
-          nwm.Emit(onMouseDrag, 1, argv);
-        }
+	  // Local<Value> argv[1];
+          // argv[0] = NodeWM::makeMouseDrag(id, x, y, ev.xmotion.x, ev.xmotion.y); // , ev.state);
+          // nwm.Emit(onMouseDrag, 1, argv);
+	  /* getrootptr(nwm.dpy, nwm.root, &x, &y);
+	  m.id = id;
+	  m.x = org_x;
+	  m.y = org_y;
+	  m.move_x = x;
+	  m.move_y = y;
+	  */
+
+	  m.move_x = ev.xmotion.x;
+	  m.move_y = ev.xmotion.y;
+
+	  nwm_emit(onMouseDrag, &m);
+	  m.x = ev.xmotion.x;
+	  m.y = ev.xmotion.y;
+
+	}
         break;
     }
+
   } while(ev.type != ButtonRelease);
 
-  XUngrabPointer(nwm.dpy, CurrentTime); */
+  m.id = id;
+  m.move_x = ev.xmotion.x;
+  m.move_y = ev.xmotion.y;
+  m.drag_done = True;
+  
+  nwm_emit(onMouseDrag, &m);
+
+  XUngrabPointer(nwm.dpy, CurrentTime);
 }
 
 static void event_clientmessage(XEvent *e) {
@@ -596,7 +628,7 @@ static void event_clientmessage(XEvent *e) {
   Atom NetWMFullscreen = XInternAtom(nwm.dpy, "_NET_WM_STATE_FULLSCREEN", False);
   nwm_window_fullscreen event_data;
 
-  if(cme->message_type == NetWMState && cme->data.l[1] == NetWMFullscreen) {
+  if(cme->message_type == NetWMState && cme->data.l[1] == (unsigned)NetWMFullscreen) {
     event_data.id = cme->window;
     if(cme->data.l[0]) {
       XChangeProperty(nwm.dpy, cme->window, NetWMState, XA_ATOM, 32,
@@ -704,19 +736,28 @@ static void event_focusout(XEvent *e) {
 }
 
 static void event_keypress(XEvent *e) {
-  KeySym keysym;
   XKeyEvent *ev;
 
   ev = &e->xkey;
-  keysym = XKeycodeToKeysym(nwm.dpy, (KeyCode)ev->keycode, 0);
+
+  /* keysym = XKeycodeToKeysym(nwm.dpy, (KeyCode)ev->keycode, 0); */
+
+  int keysyms_per_keycode_return;
+  KeySym * keysym = XGetKeyboardMapping(nwm.dpy,
+					(KeyCode)ev->keycode,
+					1,
+					&keysyms_per_keycode_return);
+
 
   nwm_keypress event_data;
   // we always unset numlock and LockMask since those should not matter
   event_data.x = ev->x;
   event_data.y = ev->y;
   event_data.keycode = ev->keycode;
-  event_data.keysym = keysym;
+  event_data.keysym = *keysym;
   event_data.modifier = (ev->state & ~(nwm.numlockmask|LockMask));
+
+  XFree(keysym);
 
   // call the callback in Node.js, passing the window object...
   nwm_emit(onKeyPress, (void *)&event_data);
@@ -739,7 +780,6 @@ static void event_maprequest(XEvent *e) {
     // only map new windows
     nwm_add_window(ev->window, &wa);
     // emit a rearrange
-    fprintf(stderr, "* emit onRearrange\n");
     nwm_emit(onRearrange, NULL);
   } else {
     fprintf(stderr, "Window is known\n");
@@ -762,7 +802,7 @@ static void event_propertynotify(XEvent *e) {
 }
 
 static void event_unmapnotify(XEvent *e) {
-  fprintf(stderr, "** UnmapNotify wid = %li \n", e->xunmap.window);
+  // fprintf(stderr, "** UnmapNotify wid = %li \n", e->xunmap.window);
   List *item = NULL;
   List_search(nwm.windows, item, (void*) e->xunmap.window);
   if(item) {

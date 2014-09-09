@@ -44,7 +44,7 @@ else
 	usage
     fi
 
-    if [ "$1" == 'rotate' -o "$1" == 'oneup' -o "$1" == 'twoup' -o "$1" == 'focus' -o "$1" == 'mode' ]; then
+    if [ "$1" == 'rotate' -o "$1" == 'oneup' -o "$1" == 'twoup' -o "$1" == '2' -o "$1" == '1' -o "$1" == 'focus' -o "$1" == 'mode' ]; then
         # state change operations
 
 	if [ "$1" == 'rotate' ]; then
@@ -59,9 +59,9 @@ else
 	    
 	elif [ "$1" == 'mode' -a $# == 2 ]; then
 	    shift
-	    if [ $1 == 'oneup' ]; then
+	    if [ "$1" == 'oneup' -o "$1" == '1' ]; then
 		CMD="layout/lever/mode/1"
-	    elif [ "$1" == 'twoup' ]; then
+	    elif [ "$1" == 'twoup' -o "$1" == '2' ]; then
 		CMD="layout/lever/mode/2"
 	    elif [ $1 == 'lever' ]; then
 		CMD="layout/lever"

@@ -9,9 +9,9 @@ var nwm = new NWM();
 
 // load layouts
 var layouts = require('./lib/layouts');
+nwm.addLayout('lever', layouts.lever);
 nwm.addLayout('tile', layouts.tile);
 nwm.addLayout('monocle', layouts.monocle);
-nwm.addLayout('lever', layouts.lever);
 
 // convinience functions for writing the keyboard shortcuts
 function currentMonitor() {
@@ -75,9 +75,32 @@ var keyboard_shortcuts = [
       monitor.focused_window && nwm.wm.killWindow(monitor.focused_window);
     }
   },
+    {
+	key: 'Right',
+	modifier: [ 'shift' ],
+	callback: function(event) {
+	    if (nwm.onDrag) {
+		var monitor = currentMonitor();
+		var workspace = monitor.currentWorkspace();
+		nwm.onDrag(workspace, 3*monitor.width/4, 0, true);
+	    }
+	}
+    },
+    {
+	key: 'Left',
+	modifier: [ 'shift' ],
+	callback: function(event) {
+	    if (nwm.onDrag) {
+		var monitor = currentMonitor();
+		var workspace = monitor.currentWorkspace();
+		nwm.onDrag(workspace, -3*monitor.width/4, 0, true);
+	    }
+	}
+    },
   {
     key: 'space', // space switches between layout modes
     callback: function(event) {
+	nwm.onDrag = null;
       var monitor = currentMonitor();
       var workspace = monitor.currentWorkspace();
       workspace.layout = nwm.nextLayout(workspace.layout);
@@ -197,6 +220,7 @@ keyboard_shortcuts.forEach(function(shortcut) {
   }
 });
 
+
 // set up a server waiting for API commands
 var express = require('express');
 var app = express();
@@ -222,7 +246,7 @@ app.use('/api/'+API_VERSION, router);
 // [current window]
 // GET /window/id
 // GET /window/info
-// GET /window/close
+// PUT /window/close
 
 // GET /window/:window_id/info
 // PUT /window/:window_id/focus
@@ -348,13 +372,17 @@ router.route('/window/:window_id/focus')
     });
 
 function win_close(window_id) {
+    var workspace = monitor.currentWorkspace();
     nwm.wm.killWindow(window_id);
+    workspace.rearrange();
 }
 
-router.route('/window/:window_id/close')
+router.route('/window/close')
     .put(function(req, res) {
 	var monitor = currentMonitor()
-	res.json(win_close(monitor.focused_window));
+	console.log('WIN to close: '+monitor.focused_window);
+	win_close(monitor.focused_window);
+	res.json({})
     });
 
 router.route('/window/:window_id/close')
@@ -364,6 +392,7 @@ router.route('/window/:window_id/close')
 	    res.status(404);
 	    res.json({err: 'window does not exist'});
 	} else {
+	    win_close(window_id);
 	    res.json({});
 	}
     });

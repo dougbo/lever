@@ -120,6 +120,7 @@ static void Emit(callback_map event, void *ev) {
         INT_FIELD(y, e->y);
         INT_FIELD(move_y, e->move_y);
         INT_FIELD(move_x, e->move_x);
+        INT_FIELD(drag_done, e->drag_done);
       }
       break;
     case onConfigureRequest:
