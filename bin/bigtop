@@ -1,0 +1,3 @@
+#!/bin/bash
+
+www "https://bigtop.sandbox.google.com"
