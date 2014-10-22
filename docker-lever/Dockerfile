@@ -44,4 +44,4 @@ RUN echo "exec xterm" >>$HOME/.xsession
 # CMD /bin/bash
 
 # the user will be prompted for oauth key and PIN
-CMD /opt/google/chrome-remote-desktop/start-host --redirect-url=https://chromoting-auth.googleplex.com/auth --name=lever-`date '+%F-%T'`; tail -f /tmp/chrome_*
+CMD /opt/google/chrome-remote-desktop/start-host --redirect-url=https://chromoting-auth.googleplex.com/auth --name=lever-`hostname`-`date '+%F-%T'`; tail -f /tmp/chrome_*

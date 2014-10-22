@@ -1,8 +1,44 @@
+
 // modules
 var NWM = require('./nwm.js'),
     XK = require('./lib/keysymdef.js'),
     Xh = require('./lib/x.js'),
     child_process = require('child_process');
+
+
+// colors
+pastels = [
+  "#F7977A", // red
+  "#F9AD81", // red organge
+  "#FDC68A", // yellow orange
+  "#FFF79A", // yellow
+  "#C4DF9B", // pea green 
+  "#A2D39C", // yellow green
+  "#82CA9D", // green
+  "#7BCDC8", // green cyan
+  "#6ECFF6", // cyan
+  "#7EA7D8", // cyan blue
+  "#8493CA", // blue
+  "#8882BE", // blue violet
+  "#A187BE", // violet
+  "#BC8DBF", // violet red
+  "#F49AC2", // magenta
+  "#F6989D", // magenta red
+];
+
+NWM.prototype.setFocusedWindow = function(win) {
+    if (win != this.ctl_window) {
+	console.log("focus in set color!");
+	this.wm.setWindowAttr(win, 'borderColor', 'green');
+    }
+}
+NWM.prototype.unsetFocusedWindow = function(win) {
+    if (win != this.ctl_window) {
+	console.log("focus OUT set color!");
+	this.wm.setWindowAttr(win, 'borderColor', 'red');
+    }
+}
+
 
 // instantiate nwm and configure it
 var nwm = new NWM();
@@ -13,12 +49,24 @@ nwm.addLayout('lever', layouts.lever);
 nwm.addLayout('tile', layouts.tile);
 nwm.addLayout('monocle', layouts.monocle);
 
+
+
+function diag() {
+    var VERBOSE_DIAG=false;
+
+    if (VERBOSE_DIAG) {
+	console.log.apply(null, arguments);
+    }
+}
+
+
 // convinience functions for writing the keyboard shortcuts
 function currentMonitor() {
   return nwm.monitors.get(nwm.monitors.current);
 }
 
 function moveToMonitor(window, currentMonitor, otherMonitorId) {
+    diag('move to monitor');
   if (window) {
     window.monitor = otherMonitorId;
     // set the workspace to the current workspace on that monitor
@@ -61,8 +109,13 @@ var keyboard_shortcuts = [
     }
   },
   {
+    key: 'Return', // enter key launches google
+    callback: function(event) {
+	child_process.spawn('chromium', ['--newwindow', '--kiosk', 'https://www.google.com'], { env: process.env });
+    }
+  },
+  {
     key: 'Return', // enter key launches xterm
-    modifier: [ 'shift' ],
     callback: function(event) {
       child_process.spawn('xterm', ['-lc'], { env: process.env });
     }
@@ -77,30 +130,68 @@ var keyboard_shortcuts = [
   },
     {
 	key: 'Right',
-	modifier: [ 'shift' ],
 	callback: function(event) {
-	    if (nwm.onDrag) {
+	    if (nwm.drag_window) {
 		var monitor = currentMonitor();
 		var workspace = monitor.currentWorkspace();
-		nwm.onDrag(workspace, 3*monitor.width/4, 0, true);
+
+		// swipe right
+		nwm.drag_window(workspace, 3*monitor.width/4, 0, true);
 	    }
 	}
     },
     {
 	key: 'Left',
-	modifier: [ 'shift' ],
 	callback: function(event) {
-	    if (nwm.onDrag) {
+	    if (nwm.drag_window) {
 		var monitor = currentMonitor();
 		var workspace = monitor.currentWorkspace();
-		nwm.onDrag(workspace, -3*monitor.width/4, 0, true);
+
+		console.log("LEFT LEFT LEFT");
+
+		// swipe left
+		nwm.drag_window(workspace, -monitor.width/4, 0, true);
 	    }
+	}
+    },
+    {
+	key: 'Down',
+	callback: function(event) {
+	    console.log('FOCUS ON CMD WINDOW');
+	    if (nwm.cmd_window) {
+		var monitor = currentMonitor();
+		nwm.unsetFocusedWindow(monitor.focused_window);
+
+		monitor.focused_window = nwm.cmd_window;
+
+		// set input / buttons
+		nwm.wm.focusWindow(nwm.cmd_window)
+
+		// keep track at a higher level; do border
+		nwm.setFocusedWindow(nwm.cmd_window);
+	    }
+	}
+    },
+
+    {
+	key: 'Up',
+	callback: function(event) {
+	    console.log('FOCUS ON MAIN WINDOW');
+	    var monitor = currentMonitor();
+	    nwm.wm.focusWindow(monitor.focused_window);
+	}
+    },
+    {
+	key: 'Tab',
+	callback: function(event) {
+	    console.log('ROTATE');
+	    rotate('f')
 	}
     },
   {
     key: 'space', // space switches between layout modes
     callback: function(event) {
-	nwm.onDrag = null;
+      nwm.drag_window = null;
       var monitor = currentMonitor();
       var workspace = monitor.currentWorkspace();
       workspace.layout = nwm.nextLayout(workspace.layout);
@@ -342,6 +433,7 @@ router.route('/window/:window_id/info')
     });
 
 function win_focus(window_id) {
+    console.log('win_focus');
     var monitor = currentMonitor();
     var workspace = monitor.currentWorkspace();
 
@@ -372,9 +464,13 @@ router.route('/window/:window_id/focus')
     });
 
 function win_close(window_id) {
+    var monitor = currentMonitor()
     var workspace = monitor.currentWorkspace();
+    console.log(typeof(window_id));
+    if (typeof(window_id) == typeof(' ')) {
+	window_id = parseInt(window_id);
+    }
     nwm.wm.killWindow(window_id);
-    workspace.rearrange();
 }
 
 router.route('/window/close')
@@ -443,50 +539,54 @@ router.route('/layout/:layout_mode')
 	}
     });
 
+function rotate(f_b) {
+    var monitor = currentMonitor();
+    var workspace = monitor.currentWorkspace();
+    var windows = nwm.windows;
+
+    var ids = Object.keys(windows.items);
+    console.log('IDS: ');
+    console.log(ids);
+    var mainId = workspace.mainWindow.toString();
+    var winAt = ids.indexOf(mainId);
+    console.log('winAt: '+winAt+' '+mainId);
+    if (winAt < 0) {
+	res.status(500);
+	res.json({err: 'Window '+mainId+' not found'});
+	return;
+    }
+
+    if (f_b == 'b') {
+	winAt = winAt -1;
+	if (winAt < 0) {
+	    // wrap back
+	    winAt = ids.length-1;
+	}
+    } else {
+	winAt = winAt + 1
+	if (winAt >= ids.length) {
+	    // wrap forward
+	    winAt = 0;
+	}
+    }
+    var newMainId = ids[winAt];
+    console.log('main window: '+mainId);
+    console.log('new main: '+newMainId+' '+winAt);
+
+    monitor.mainWindow = ids[winAt];
+    var window = windows.get(mainId);
+    window.hide();
+    window = windows.get(newMainId);
+    window.show();
+
+    workspace.rearrange();
+}
+
 router.route('/layout/rotate/:f_b')
     .put(function(req, res) {
 	var f_b = req.params.f_b;
 	if (f_b == 'f' || f_b == 'b') {
-	    var monitor = currentMonitor();
-	    var workspace = monitor.currentWorkspace();
-	    var windows = nwm.windows;
-
-	    var ids = Object.keys(windows.items);
-	    console.log('IDS: ');
-	    console.log(ids);
-	    var mainId = workspace.mainWindow.toString();
-	    var winAt = ids.indexOf(mainId);
-	    console.log('winAt: '+winAt+' '+mainId);
-	    if (winAt < 0) {
-		res.status(500);
-		res.json({err: 'Window '+mainId+' not found'});
-		return;
-	    }
-
-	    if (f_b == 'b') {
-		winAt = winAt -1;
-		if (winAt < 0) {
-		    // wrap back
-		    winAt = ids.length-1;
-		}
-	    } else {
-		winAt = winAt + 1
-		if (winAt >= ids.length) {
-		    // wrap forward
-		    winAt = 0;
-		}
-	    }
-	    var newMainId = ids[winAt];
-	    console.log('main window: '+mainId);
-	    console.log('new main: '+newMainId+' '+winAt);
-
-	    monitor.mainWindow = ids[winAt];
-	    var window = windows.get(mainId);
-	    window.hide();
-	    window = windows.get(newMainId);
-	    window.show();
-
-	    workspace.rearrange();
+	    rotate(f_b);
 	    res.json({})
 	} else {
 	    res.status(404);
@@ -519,9 +619,9 @@ router.route('/layout/lever/mode/:n_up')
     });
 
 
-
 app.listen(port);
 console.log('Listening: '+port);
 
+
 // START
-nwm.start(function() { });
+nwm.start(function() {});

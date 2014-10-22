@@ -20,6 +20,11 @@ static Bool isuniquegeom(XineramaScreenInfo *unique, size_t len, XineramaScreenI
   return True;
 }
 
+int xioerror(Display *dpy) {
+  fprintf(stderr, "FATAL X IO ERROR in display\n");
+  return 0;
+}
+
 int xerror(Display *dpy, XErrorEvent *ee) {
   if(ee->error_code == BadWindow
   || (ee->request_code == X_SetInputFocus && ee->error_code == BadMatch)

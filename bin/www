@@ -1,10 +1,36 @@
-#!/bin/bash
+#!/usr/bin/env node
 
-# www: launch a web browser screen
+var child_process = require('child_process'),
+    querystring = require('querystring');
 
-if [ $# -eq 0 ]; then
-   echo "usage: www <url>"
-   exit 1
-fi
 
-exec chromium --kiosk "$*"
+// www: launch a web browser screen
+// google: issue a query
+// wiki: issue a query
+
+var program=process.argv[1].split('/').slice(-1)[0]; // basename, effectively
+
+if (program == 'www' && process.argv.length != 3) {
+	console.log('usage: www <url>');
+	return;
+}
+
+var url=process.argv.slice(2).join(' ')
+// console.log('url: '+url);
+
+if (program == 'google') {
+	var args=querystring.escape(process.argv.slice(2).join(' '));
+	url='https://www.google.com/search?q='+args
+} else if (url.indexOf(':') == -1) {
+	// make sure we have a default protocol
+	url = 'http://'+url;
+}
+
+
+var child = child_process.spawn('chromium', ['--newwindow', '--app='+url ], { 
+	detached: true,
+	env: process.env,
+	stdio: ['ignore', 'ignore', 'ignore']
+	});
+
+child.unref();

@@ -12,12 +12,16 @@ var Collection = require('./lib/collection.js'),
 
 
 function diag() {
-    var VERBOSE_DIAG=false;
+    var VERBOSE_DIAG=true;
 
     if (VERBOSE_DIAG) {
 	console.log.apply(null, arguments);
     }
 }
+
+
+var WIN_ACTIVE_BG='#606060';
+var WIN_NORMAL_BG='#666666';
 
 // Node Window Manager
 // -------------------
@@ -33,6 +37,14 @@ var NWM = function() {
   // windows -- this is the global storage for windows, any other objects just store ids referring to this hash.
   this.windows = new Collection(this, 'window', 1);
   this.floaters = [];
+
+  // lever accoutrements
+  this.CMD_TITLE='NWM Command Window';
+  this.CTL_TITLE='NWM Control Window';
+
+  this.drag_window = null;
+  this.ctl_window = null;
+  this.cmd_window = null;
 }
 
 require('util').inherits(NWM, require('events').EventEmitter);
@@ -50,6 +62,7 @@ NWM.prototype.events = {
 
   // A monitor is updated
   updateMonitor: function(monitor) {
+      diag('update monitor');
     this.monitors.update(monitor.id, monitor);
   },
 
@@ -63,6 +76,7 @@ NWM.prototype.events = {
   // -------------
   // A new window is added
   addWindow: function(window) {
+      diag('add window');
     if(window.id) {
       var current_monitor = this.monitors.get(this.monitors.current);
       window.workspace = current_monitor.workspaces.current;
@@ -87,45 +101,69 @@ NWM.prototype.events = {
       if(win.x > current_monitor.width || win.y > current_monitor.height) {
         win.move(1, 1);
       }
-	console.log('Add window', {
-        window: window,
-        current_monitor: {
-          width: current_monitor.width,
-          height: current_monitor.height
-        }
-      });
+	diag('Add window', {
+            window: window,
+            current_monitor: {
+		width: current_monitor.width,
+		height: current_monitor.height
+            }
+	});
       this.windows.add(win);
+
     }
   },
 
   // When a window is removed
   removeWindow: function(window) {
-    this.windows.remove(function(item) {
-      if(item && item.id && window.id) {
-        return (item.id != window.id);
-      } else {
-        // multiple windows removed simultaneously - item is undefined
-        return true;
+
+      diag("removing windows...")
+      if (window.id == this.cmd_window) {
+	  // this really shouldn't happen but just in case
+	  this.cmd_window = null;
       }
-    });
-    var pos = this.floaters.indexOf(window.id);
-    if(pos > -1) {
-      this.floaters = this.floaters.splice(pos, 1);
-    }
-    // moved rearrange here to ensure that it occurs after everything else
-    var current_monitor = this.monitors.get(this.monitors.current);
-    current_monitor.workspaces.get(current_monitor.workspaces.current).rearrange();
+
+      // removes window from nwm.windows list...
+      this.windows.remove(function(item) {
+	  if(item && item.id && window.id) {
+              return (item.id != window.id);
+	  } else {
+              // multiple windows removed simultaneously - item is undefined
+              return true;
+	  }
+      });
+      console.log("done removing windows.")
+      var pos = this.floaters.indexOf(window.id);
+      if(pos > -1) {
+	  this.floaters = this.floaters.splice(pos, 1);
+      }
+      console.log('remove: '+window.id+': '+Object.keys(this.windows.items))
+      // moved rearrange here to ensure that it occurs after everything else
+      if (false) {
+	  var current_monitor = this.monitors.get(this.monitors.current);
+	  current_monitor.workspaces.get(current_monitor.workspaces.current).rearrange();
+      }
   },
 
   // When a window is updated
   // This is only triggered for title and class updates, never coordinates or monitors.
   updateWindow: function(window) {
+    diag('update window '+window.title);
     if(this.windows.exists(window.id)) {
-      var old = this.windows.get(window.id);
+	console.log('exists title= "'+window.title+'" - "'+this.CMD_TITLE+'"');
+	if (window.title == this.CMD_TITLE) {
+	    console.log('found command window!'+this.cmd_window+' '+window.id);
+	    // this.cmd_window = window.id;
+	} else if (window.title == this.CTL_TITLE) {
+	    this.ctl_window = window.id;
+	}
+      var exist = this.windows.get(window.id);
       this.windows.update(window.id, {
-        title: window.title || old.title || '',
-        class: window.class || old.class || ''
+        title: window.title || exist.title || '',
+        class: window.class || exist.class || ''
       });
+    } else {
+	console.log('did not find '+window.id);
+	console.log(this.windows)
     }
   },
 
@@ -207,10 +245,10 @@ NWM.prototype.events = {
       var change_y = event.move_y - event.y;
       var done = event.drag_done;
       console.log('DRAG! '+change_x+' '+change_y);
-      if (this.onDrag) {
+      if (this.drag_window) {
 	  var monitor = this.monitors.get(this.monitors.current);
 	  var workspace = monitor.workspaces.get(monitor.workspaces.current);
-	  this.onDrag(workspace, change_x, change_y, done);
+	  this.drag_window(workspace, change_x, change_y, done);
       }
       /* 
 	 var window = this.windows.exists(event.id) && this.windows.get(event.id);
@@ -224,14 +262,14 @@ NWM.prototype.events = {
   enterNotify: function(event){
     if(this.windows.exists(event.id)) {
       var window = this.windows.get(event.id);
-	diag('focused monitor is ', this.monitors.current, 'focusing to', window.monitor, window.title);
+      diag('enterNotify: focused monitor is ', this.monitors.current, 'focusing to', window.monitor, window.title);
       if(this.monitors.exists(window.monitor)) {
         this.monitors.get(window.monitor).focused_window = event.id;
       }
       this.wm.focusWindow(event.id);
+      this.setFocusedWindow(event.id);
     } else {
-      console.log('WARNING got focus event for nonexistent (transient) window', event);
-      this.wm.focusWindow(event.id);
+	console.log('WARNING got focus event for nonexistent (transient) window', event);
     }
     // This event is also emitted for the root window
     //  so in any case, we want to set the current monitor based on the event coordinates
@@ -253,12 +291,37 @@ NWM.prototype.events = {
     });
     if(didChangeFocus) {
 	diag('Focus monitor by coordinates', x, y);
+	this.wm.focusWindow(event.id);
+	this.setFocusedWindow(event.id);
     }
+  },
+
+  focusIn: function(event) {
+      // we've been redirected to a new window; sort out our bookkeeping
+      console.log('focus in event: '+event.id);
+      var window = this.windows.get(event.id);
+      if(this.monitors.exists(window.monitor)) {
+        this.monitors.get(window.monitor).focused_window = event.id;
+      }
+      
+      this.setFocusedWindow(event.id);
+  },
+
+  focusOut: function(event) {
+      // we're leaving! clean up our bookkeeping
+      console.log('focus out event: '+event.id);
+      var window = this.windows.get(event.id);
+      if(this.monitors.exists(window.monitor)) {
+          this.monitors.get(window.monitor).focused_window = null;
+      }
+      
+      this.unsetFocusedWindow(event.id);
   },
 
   // Screen events
   // -------------
   rearrange: function() {
+      diag('rearrange event');
     var self = this;
     // rearrange current workspace on all monitors
     var monitors = Object.keys(this.monitors.items);
@@ -297,6 +360,17 @@ NWM.prototype.nextLayout = function(name) {
   // Wrap around the array
   return (keys[pos+1] ? keys[pos+1] : keys[0] );
 };
+
+NWM.prototype.setFocusedWindow = function(win) {
+    console.log("ACTIVE "+win);
+    this.wm.setWindowAttr(win, WIN_ACTIVE_BG);
+}
+
+NWM.prototype.unsetFocusedWindow = function(win) {
+    console.log("INACTIVE "+win);
+    this.wm.setWindowAttr(win, WIN_NORMAL_BG);
+}
+
 
 // Keyboard shortcut operations
 // ----------------------------

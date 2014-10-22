@@ -88,4 +88,4 @@ ENV CHROME_REMOTE_DESKTOP_DEFAULT_DESKTOP_SIZES 1024x800
 
 # launch the remote desktop as our new user
 USER crd
-CMD /opt/google/chrome-remote-desktop/start-host --redirect-url=https://chromoting-auth.googleplex.com/auth --name=BasicCRD ; tail -f /tmp/chrome_*
+CMD /opt/google/chrome-remote-desktop/start-host --redirect-url=https://chromoting-auth.googleplex.com/auth --name=crd-`hostname`-`date '+%F-%T'` ; tail -f /tmp/chrome_*

@@ -17,6 +17,8 @@ struct Key {
 extern void nwm_empty_keys();
 extern void nwm_add_key(KeySym keysym, unsigned int mod);
 
+extern Window nwm_create_test_window();
+
 // known callbacks
 enum callback_map {
   onAddMonitor,
@@ -32,6 +34,8 @@ enum callback_map {
   onKeyPress,
   onEnterNotify,
   onFullscreen,
+  onFocusIn,
+  onFocusOut,
   onLast
 };
 typedef enum callback_map callback_map;
@@ -51,6 +55,7 @@ extern void nwm_focus_window(Window win);
 extern void nwm_kill_window(Window win);
 extern void nwm_configure_window(Window win, int x, int y, int width, int height, \
     int border_width, int above, int detail, int value_mask);
+extern void nwm_set_window_border_color(Window win, const char * border_color);
 extern void nwm_notify_window(Window win, int x, int y, int width, int height, \
     int border_width, int above, int detail, int value_mask);
 

@@ -1,5 +1,6 @@
 #include <v8.h>
 #include <node.h>
+#include <string>
 #include <string.h>
 
 extern "C" {
@@ -31,7 +32,9 @@ static Handle<Value> OnCallback(const Arguments& args) {
       v8::String::New("configureRequest"),
       v8::String::New("keyPress"),
       v8::String::New("enterNotify"),
-      v8::String::New("fullscreen")
+      v8::String::New("fullscreen"),
+      v8::String::New("focusIn"),
+      v8::String::New("focusOut")
     };
 
   v8::Local<v8::String> value = Local<v8::String>::Cast(args[0]);
@@ -158,6 +161,21 @@ static void Emit(callback_map event, void *ev) {
         o->Set(String::NewSymbol("y_root"), Integer::New(e->y_root));
       }
       break;
+    case onFocusIn:
+      // gaining input focus
+      {
+        XFocusChangeEvent* e = (XFocusChangeEvent*) ev;
+        o->Set(String::NewSymbol("id"), Integer::New(e->window));
+      }
+      break;
+
+    case onFocusOut:
+      // losing focus
+      {
+        XFocusChangeEvent* e = (XFocusChangeEvent*) ev;
+        o->Set(String::NewSymbol("id"), Integer::New(e->window));
+      }
+      break;
   }
   Local<Value> argv[1];
   argv[0] = o;
@@ -253,9 +271,51 @@ static Handle<Value> NotifyWindow(const Arguments& args) {
   return Undefined();
 }
 
+
+Handle<Value> SetWindowAttr(const Arguments &args) {
+  HandleScope scope;
+
+  Window win = args[0]->Uint32Value();
+
+  // for now, just the border color
+  v8::String::Utf8Value argname_param(args[1]->ToString());
+  std::string arg_name = std::string(*argname_param);
+  if (strcmp(arg_name.c_str(), "borderColor") != 0) {
+    fprintf(stderr, "SetWindowAttr: invalid argument %s\n", arg_name.c_str());
+    return Undefined();
+  }
+    
+
+  // get the param
+  v8::String::Utf8Value color_param(args[2]->ToString());
+
+  // convert it to string
+  std::string str_color = std::string(*color_param);
+  const char * border_color = str_color.c_str();
+
+  nwm_set_window_border_color(win, border_color);
+  return Undefined();
+}
+
+Handle<Value> CreateTestWindow(const Arguments &args) {
+  HandleScope scope;
+
+  // EscapableHandleScope handle_scope(isolate);
+
+  Window win = nwm_create_test_window();
+  Local<Integer> ret = Integer::New(win);
+
+  return scope.Close(ret);
+}
+
 extern "C" {
   void init(Handle<Object> target) {
     HandleScope scope;
+
+    target->Set(String::NewSymbol("createTestWindow"),
+		FunctionTemplate::New(CreateTestWindow)->GetFunction());
+    target->Set(String::NewSymbol("setWindowAttr"),
+		FunctionTemplate::New(SetWindowAttr)->GetFunction());
 
     for(int i = 0; i < onLast; i++) {
       callbacks[i] = NULL;
